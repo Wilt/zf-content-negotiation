@@ -35,7 +35,7 @@ class Module
     /**
      * {@inheritDoc}
      */
-    public function onBootstrap($e)
+    public function onBootstrap(MvcEvent $e)
     {
         $app      = $e->getApplication();
         $services = $app->getServiceManager();
