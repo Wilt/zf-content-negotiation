@@ -11,6 +11,7 @@ use ReflectionObject;
 use Zend\Http\Request;
 use Zend\Mvc\MvcEvent;
 use Zend\Stdlib\Parameters;
+use ZF\ApiProblem\ApiProblemResponse;
 use ZF\ContentNegotiation\ContentTypeListener;
 use ZF\ContentNegotiation\MultipartContentParser;
 use ZF\ContentNegotiation\Request as ContentNegotiationRequest;
@@ -597,5 +598,29 @@ class ContentTypeListenerTest extends TestCase
         ];
 
         $this->assertEquals($expected, $params->getBodyParams());
+    }
+
+    /**
+     *
+     */
+    public function testDecodeJsonWithVeryLargeNumberReturnsApiProblemResponse()
+    {
+        $data = '"{"large_number":128934701823471023487128390871}"';
+        $json = json_encode($data);
+        $method = 'POST';
+        $listener = $this->listener;
+
+        $request = new Request();
+        $request->setMethod($method);
+        $request->getHeaders()->addHeaderLine('Content-Type', 'application/hal+json');
+        $request->setContent($json);
+
+        $event = new MvcEvent();
+        $event->setRequest($request);
+        $event->setRouteMatch($this->createRouteMatch([]));
+
+        $result = $listener($event);
+
+        $this->assertInstanceOf(ApiProblemResponse::class, $result);
     }
 }
