@@ -15,6 +15,7 @@ use ZF\ContentNegotiation\ContentTypeListener;
 use ZF\ContentNegotiation\ControllerPlugin;
 use ZF\ContentNegotiation\Factory;
 use ZF\ContentNegotiation\JsonModel;
+use ZF\ContentNegotiation\Parser;
 
 return [
     'filters' => [
@@ -37,14 +38,25 @@ return [
         ],
     ],
 
+    'parser_manager' => [
+        'invokables' => [
+            'JsonParser' => Parser\JsonParser::class,
+            'HalJsonParser' => Parser\HalJsonParser::class
+        ],
+        'factories' => [
+            'MultipartFormDataParser' => Factory\MultipartFormDataParserFactory::class
+        ]
+    ],
+
     'service_manager' => [
         'factories' => [
-            ContentTypeListener::class       => InvokableFactory::class,
-            'Request'                        => Factory\RequestFactory::class,
-            AcceptListener::class            => Factory\AcceptListenerFactory::class,
-            AcceptFilterListener::class      => Factory\AcceptFilterListenerFactory::class,
-            ContentTypeFilterListener::class => Factory\ContentTypeFilterListenerFactory::class,
-            ContentNegotiationOptions::class => Factory\ContentNegotiationOptionsFactory::class,
+            ContentTypeListener::class        => Factory\ContentTypeListenerFactory::class,
+            'Request'                         => Factory\RequestFactory::class,
+            AcceptListener::class             => Factory\AcceptListenerFactory::class,
+            AcceptFilterListener::class       => Factory\AcceptFilterListenerFactory::class,
+            ContentTypeFilterListener::class  => Factory\ContentTypeFilterListenerFactory::class,
+            ContentNegotiationOptions::class  => Factory\ContentNegotiationOptionsFactory::class,
+            Parser\ParserPluginManager::class => Factory\ParserPluginManagerFactory::class,
         ],
     ],
 
@@ -67,6 +79,12 @@ return [
                     'application/*+json',
                 ],
             ],
+        ],
+
+        'parsers'              => [
+            'application/json' => 'JsonParser',
+            'application/*+json' => 'HalJsonParser',
+            'multipart/form-data' => 'MultipartFormDataParser'
         ],
 
         // Array of controller service name => allowed accept header pairs.

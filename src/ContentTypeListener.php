@@ -6,29 +6,48 @@
 
 namespace ZF\ContentNegotiation;
 
+use Zend\Http\Header\ContentType;
 use Zend\Mvc\MvcEvent;
 use ZF\ApiProblem\ApiProblem;
 use ZF\ApiProblem\ApiProblemResponse;
+use ZF\ContentNegotiation\Parser\ParserInterface;
+use ZF\ContentNegotiation\Parser\ParserPluginManager;
 
 class ContentTypeListener
 {
     /**
      * @var array
      */
-    protected $jsonErrors = [
-        JSON_ERROR_DEPTH          => 'Maximum stack depth exceeded',
-        JSON_ERROR_STATE_MISMATCH => 'Underflow or the modes mismatch',
-        JSON_ERROR_CTRL_CHAR      => 'Unexpected control character found',
-        JSON_ERROR_SYNTAX         => 'Syntax error, malformed JSON',
-        JSON_ERROR_UTF8           => 'Malformed UTF-8 characters, possibly incorrectly encoded',
+    protected $methods = [
+        Request::METHOD_POST,
+        Request::METHOD_PATCH,
+        Request::METHOD_PUT,
+        Request::METHOD_DELETE
     ];
 
     /**
-     * Directory where upload files were written, if any
+     * ContentTypeListener constructor.
      *
-     * @var string
+     * @param ParserPluginManager $parserPluginManager
+     * @param array $parsers
      */
-    protected $uploadTmpDir;
+    public function __construct(ParserPluginManager $parserPluginManager, $parsers)
+    {
+        $this->parserPluginManager = $parserPluginManager;
+        $this->parsers = $parsers;
+    }
+
+    /**
+     * @var ParserPluginManager
+     */
+    protected $parserPluginManager;
+
+    /**
+     * Content-Type parser map
+     *
+     * @var array
+     */
+    protected $parsers;
 
     /**
      * Perform content negotiation
@@ -40,21 +59,21 @@ class ContentTypeListener
      * If an error occurs during deserialization, an ApiProblemResponse is
      * returned, indicating an issue with the submission.
      *
-     * @param  MvcEvent $e
-     * @return null|ApiProblemResponse
+     * @param  MvcEvent $event
+     * @return void|ApiProblemResponse
      */
-    public function __invoke(MvcEvent $e)
+    public function __invoke(MvcEvent $event)
     {
-        $request       = $e->getRequest();
+        /** @var Request $request */
+        $request = $event->getRequest();
         if (!method_exists($request, 'getHeaders')) {
             // Not an HTTP request; nothing to do
             return;
         }
-
-        $routeMatch    = $e->getRouteMatch();
         $parameterData = new ParameterDataContainer();
 
         // route parameters:
+        $routeMatch  = $event->getRouteMatch();
         $routeParams = $routeMatch->getParams();
         $parameterData->setRouteParams($routeParams);
 
@@ -63,154 +82,74 @@ class ContentTypeListener
 
         // body parameters:
         $bodyParams  = [];
-        $contentType = $request->getHeader('Content-Type');
-        switch ($request->getMethod()) {
-            case $request::METHOD_POST:
-                if ($contentType && $contentType->match('application/json')) {
-                    $bodyParams = $this->decodeJson($request->getContent());
-                    break;
-                }
+        $method = $request->getMethod();
 
-                $bodyParams = $request->getPost()->toArray();
-                break;
-            case $request::METHOD_PATCH:
-            case $request::METHOD_PUT:
-            case $request::METHOD_DELETE:
-                $content = $request->getContent();
-
-                if ($contentType && $contentType->match('multipart/form-data')) {
-                    try {
-                        $parser = new MultipartContentParser($contentType, $request);
-                        $bodyParams = $parser->parse();
-                    } catch (Exception\ExceptionInterface $e) {
-                        $bodyParams = new ApiProblemResponse(new ApiProblem(
-                            400,
-                            $e
-                        ));
-                        break;
-                    }
-
-                    if ($request->getFiles()->count()) {
-                        $this->attachFileCleanupListener($e, $parser->getUploadTempDir());
-                    }
-                    break;
-                }
-
-                if ($contentType && $contentType->match('application/json')) {
-                    $bodyParams = $this->decodeJson($content);
-                    break;
-                }
-
-                // Stolen from AbstractRestfulController
-                parse_str($content, $bodyParams);
-                if (!is_array($bodyParams)
-                    || (1 == count($bodyParams) && isset($bodyParams[0]))
-                ) {
-                    $bodyParams = $content;
-                }
-                break;
-            default:
-                break;
+        if (in_array($method, $this->methods)) {
+            $contentType = $request->getHeader('Content-Type');
+            $parser = $this->getParserForContentType($contentType);
+            if (!$parser){
+                $apiProblemResponse = new ApiProblemResponse(new ApiProblem(
+                    415,
+                    'unsupported media type'
+                ));
+                return $apiProblemResponse;
+            }
+            try {
+                $bodyParams = $parser->parse($request);
+            } catch (Exception\ExceptionInterface $exception) {
+                $apiProblemResponse = new ApiProblemResponse(new ApiProblem(
+                    400,
+                    $exception
+                ));
+                return $apiProblemResponse;
+            }
         }
 
-        if ($bodyParams instanceof ApiProblemResponse) {
-            return $bodyParams;
-        }
-
-        $bodyParams = $bodyParams ?: [];
         $parameterData->setBodyParams($bodyParams);
-        $e->setParam('ZFContentNegotiationParameterData', $parameterData);
+        $event->setParam('ZFContentNegotiationParameterData', $parameterData);
     }
 
     /**
-     * Remove upload files if still present in filesystem
+     * Get parser for content type
      *
-     * @param MvcEvent $e
+     * @param ContentType $contentType
+     * @return ParserInterface|false
      */
-    public function onFinish(MvcEvent $e)
+    protected function getParserForContentType(ContentType $contentType)
     {
-        $request = $e->getRequest();
+        $map = $this->parsers;
+        $parserPluginManager = $this->getParserPluginManager();
 
-        foreach ($request->getFiles() as $fileInfo) {
-            if (dirname($fileInfo['tmp_name']) !== $this->uploadTmpDir) {
-                // File was moved
-                continue;
+        foreach ($map as $key => $parser) {
+            if ($contentType->match($key)) {
+                if (!$parserPluginManager->has($parser)) {
+                    return false;
+                }
+                return $parserPluginManager->get($parser);
             }
-
-            if (! preg_match('/^zfc/', basename($fileInfo['tmp_name']))) {
-                // File was moved
-                continue;
-            }
-
-            if (! file_exists($fileInfo['tmp_name'])) {
-                continue;
-            }
-
-            unlink($fileInfo['tmp_name']);
         }
+        return false;
     }
 
     /**
-     * Attempt to decode a JSON string
+     * Get parser plugin manager
      *
-     * Decodes a JSON string and returns it; if invalid, returns
-     * an ApiProblemResponse.
-     *
-     * @param  string $json
-     * @return mixed|ApiProblemResponse
+     * @return ParserPluginManager
      */
-    public function decodeJson($json)
+    public function getParserPluginManager()
     {
-        // Trim whitespace from front and end of string to avoid parse errors
-        $json = trim($json);
-
-        // If the data is empty, return an empty array to prevent JSON decode errors
-        if (empty($json)) {
-            return [];
-        }
-
-        $data = json_decode($json, true);
-        $isArray = is_array($data);
-
-        // Decode 'application/hal+json' to 'application/json' by merging _embedded into the array
-        if ($isArray && isset($data['_embedded'])) {
-            foreach ($data['_embedded'] as $key => $value) {
-                $data[$key] = $value;
-            }
-            unset($data['_embedded']);
-        }
-
-        if ($isArray) {
-            return $data;
-        }
-
-        $error = json_last_error();
-        if ($error === JSON_ERROR_NONE && $isArray) {
-            return $data;
-        }
-
-        $message = array_key_exists($error, $this->jsonErrors) ? $this->jsonErrors[$error] : 'Unknown error';
-
-        return new ApiProblemResponse(
-            new ApiProblem(400, sprintf('JSON decoding error: %s', $message))
-        );
+        return $this->parserPluginManager;
     }
 
     /**
-     * Attach the file cleanup listener
+     * Get parser plugin manager
      *
-     * @param MvcEvent $event
-     * @param string $uploadTmpDir Directory in which file uploads were made
+     * @param ParserPluginManager $parserPluginManager
+     * @return self
      */
-    protected function attachFileCleanupListener(MvcEvent $event, $uploadTmpDir)
+    public function setParserPluginManager(ParserPluginManager $parserPluginManager)
     {
-        $target = $event->getTarget();
-        if (! $target || ! is_object($target) || ! method_exists($target, 'getEventManager')) {
-            return;
-        }
-
-        $this->uploadTmpDir = $uploadTmpDir;
-        $events = $target->getEventManager();
-        $events->attach('finish', [$this, 'onFinish'], 1000);
+        $this->parserPluginManager = $parserPluginManager;
+        return $this;
     }
 }

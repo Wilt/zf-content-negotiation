@@ -23,6 +23,11 @@ class ContentNegotiationOptions extends AbstractOptions
     /**
      * @var array
      */
+    protected $parsers = [];
+
+    /**
+     * @var array
+     */
     protected $acceptWhitelist = [];
 
     /**
@@ -127,5 +132,21 @@ class ContentNegotiationOptions extends AbstractOptions
     public function getContentTypeWhitelist()
     {
         return $this->contentTypeWhitelist;
+    }
+
+    /**
+     * @param array $parsers
+     */
+    public function setParsers(array $parsers)
+    {
+        $this->parsers = $parsers;
+    }
+
+    /**
+     * @return array
+     */
+    public function getParsers()
+    {
+        return $this->parsers;
     }
 }

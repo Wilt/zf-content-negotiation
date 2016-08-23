@@ -6,14 +6,13 @@
 
 namespace ZF\ContentNegotiation;
 
+use Zend\ModuleManager\Feature\InitProviderInterface;
+use Zend\ModuleManager\ModuleManager;
+use Zend\ModuleManager\ModuleManagerInterface;
 use Zend\Mvc\MvcEvent;
 use Zend\Stdlib\DispatchableInterface;
-use ZF\ContentNegotiation\AcceptListener;
-use ZF\ContentNegotiation\AcceptFilterListener;
-use ZF\ContentNegotiation\ContentTypeFilterListener;
-use ZF\ContentNegotiation\ContentTypeListener;
 
-class Module
+class Module implements InitProviderInterface
 {
     /**
      * Return module-specific configuration.
@@ -54,6 +53,26 @@ class Module
             MvcEvent::EVENT_DISPATCH,
             $services->get(AcceptListener::class),
             -10
+        );
+    }
+
+    /**
+     * Register a specification for the FilterManager with the ServiceListener.
+     *
+     * @param ModuleManagerInterface|ModuleManager $moduleManager
+     * @return void
+     */
+    public function init(ModuleManagerInterface $moduleManager)
+    {
+        $event = $moduleManager->getEvent();
+        $container = $event->getParam('ServiceManager');
+        $serviceListener = $container->get('ServiceListener');
+
+        $serviceListener->addServiceManager(
+            'ParserPluginManager',
+            'parser_manager',
+            'Zend\ModuleManager\Feature\FilterProviderInterface',
+            'getFilterConfig'
         );
     }
 }
