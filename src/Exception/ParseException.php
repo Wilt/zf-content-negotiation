@@ -4,6 +4,6 @@ namespace ZF\ContentNegotiation\Exception;
 
 use RuntimeException;
 
-class ParseException extends RuntimeException
+class ParseException extends RuntimeException implements ExceptionInterface
 {
 }

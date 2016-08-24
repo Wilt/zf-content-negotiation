@@ -90,13 +90,14 @@ class ContentTypeListener
             if (!$parser){
                 $apiProblemResponse = new ApiProblemResponse(new ApiProblem(
                     415,
-                    'unsupported media type'
+                    'Unsupported Media Type'
+
                 ));
                 return $apiProblemResponse;
             }
             try {
                 $bodyParams = $parser->parse($request);
-            } catch (Exception\ExceptionInterface $exception) {
+            } catch (Exception\ParseException $exception) {
                 $apiProblemResponse = new ApiProblemResponse(new ApiProblem(
                     400,
                     $exception

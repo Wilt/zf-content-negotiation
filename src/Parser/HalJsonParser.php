@@ -25,5 +25,6 @@ class HalJsonParser extends JsonParser
             }
             unset($data['_embedded']);
         }
+        return $data;
     }
 }

@@ -6,6 +6,6 @@
 
 namespace ZF\ContentNegotiation\Exception;
 
-class InvalidJsonException extends ParseException
+class InvalidHalJsonException extends InvalidJsonException
 {
 }
