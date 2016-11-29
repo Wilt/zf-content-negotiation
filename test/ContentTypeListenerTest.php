@@ -605,7 +605,7 @@ class ContentTypeListenerTest extends TestCase
      */
     public function testDecodeJsonWithVeryLargeNumberReturnsApiProblemResponse()
     {
-        $data = '"{"large_number":128934701823471023487128390871}"';
+        $data = '{"large_number":128934701823471023487128390871}';
         $json = json_encode($data);
         $method = 'POST';
         $listener = $this->listener;
